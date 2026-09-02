@@ -101,13 +101,14 @@ EVENT_TYPE_CLOSED_NO_WRITE = "closed_no_write"
 EVENT_TYPE_OPENED = "opened"
 
 
-@dataclass(frozen=True)
+@dataclass(unsafe_hash=True)
 class FileSystemEvent:
-    """Immutable type that represents a file system event that is triggered
-    when a change occurs on the monitored file system.
+    """Represents a file system event that is triggered when a change occurs
+    on the monitored file system.
 
-    All FileSystemEvent objects are required to be immutable and hence
-    can be used as keys in dictionaries or be added to sets.
+    Instances are hashable and compare by value, but their fields stay
+    writable and the hash is derived from them, so mutating an event already
+    held in a dict or set strands it there.
     """
 
     src_path: bytes | str
