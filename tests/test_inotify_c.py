@@ -222,3 +222,34 @@ def test_select_fd(p: P, event_queue: TestEventQueue, start_watching: StartWatch
         os.remove(path)
         event, _ = event_queue.get(timeout=5)
         assert repr(event)
+
+
+def test_queue_overflow_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    def read_events(event_buffer: bytes) -> list[InotifyEvent]:
+        # A stand-in for InotifyFD keeps the singleton out of this: its reader
+        # thread would spin on a buffer that never blocks.
+        stub = type("StubFD", (object,), {"_read_event_buffer": lambda _self, _size: event_buffer})()
+        return InotifyFD.read_events(stub)
+
+    overflow = struct_inotify(-1, InotifyConstants.IN_Q_OVERFLOW)
+    created = struct_inotify(wd=1, mask=InotifyConstants.IN_CREATE, length=16, name=b"file.ext")
+    created_event = InotifyEvent(WatchDescriptor(1), InotifyConstants.IN_CREATE, 0, b"file.ext")
+
+    with caplog.at_level(logging.WARNING, logger="watchdog.observers.inotify_c"):
+        assert read_events(created) == [created_event]
+        assert "overflow" not in caplog.text
+
+        caplog.clear()
+        assert read_events(overflow) == []
+        assert "overflow" in caplog.text
+        assert "max_queued_events" in caplog.text
+
+        # The overflow record is not an event, but real records beside it survive.
+        caplog.clear()
+        assert read_events(overflow + created) == [created_event]
+        assert "overflow" in caplog.text
+
+        # A record with no watch descriptor and no overflow bit stays silent.
+        caplog.clear()
+        assert read_events(struct_inotify(-1, InotifyConstants.IN_IGNORED)) == []
+        assert "overflow" not in caplog.text
