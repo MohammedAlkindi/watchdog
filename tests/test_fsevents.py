@@ -28,7 +28,7 @@ from unittest.mock import Mock, patch
 
 import _watchdog_fsevents as _fsevents  # type: ignore[import-not-found]
 
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileSystemEvent, FileSystemEventHandler, PatternMatchingEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver, EventQueue, ObservedWatch
 from watchdog.observers.fsevents import FSEventsEmitter
@@ -323,6 +323,42 @@ def test_two_streams_same_path(p: P) -> None:
         assert not thread.is_alive()
 
 
+def test_two_observers_on_same_path(p: P) -> None:  # for issue 919
+    input_dir = p("")
+    received1: list[FileSystemEvent] = []
+    received2: list[FileSystemEvent] = []
+
+    class Handler1(PatternMatchingEventHandler):
+        def on_created(self, event: FileSystemEvent) -> None:
+            received1.append(event)
+
+    class Handler2(PatternMatchingEventHandler):
+        def on_created(self, event: FileSystemEvent) -> None:
+            received2.append(event)
+
+    observer = Observer()
+    observer.schedule(Handler1(), input_dir, recursive=True)
+    observer.start()
+
+    observer2 = Observer()
+    observer2.schedule(Handler2(), input_dir, recursive=True)
+    observer2.start()
+
+    try:
+        sleep(0.2)
+        touch(os.path.join(input_dir, "test.txt"))
+        sleep(0.5)
+        assert observer.is_alive()
+        assert observer2.is_alive()
+        assert len(received1) >= 1
+        assert len(received2) >= 1
+    finally:
+        observer.stop()
+        observer2.stop()
+        observer.join(5)
+        observer2.join(5)
+
+
 def test_stream_concurrent_run_race(p: P) -> None:
     stream = _fsevents.Stream([p()])
     barrier = threading.Barrier(2)
@@ -424,6 +460,7 @@ def test_stream_callback_failure_terminates_stream(p: P) -> None:
 
     sys.unraisablehook = hook
     try:
+
         def faulty_cb(*args) -> None:
             message = "callback failure test"
             raise RuntimeError(message)
@@ -640,7 +677,7 @@ def test_recursive_check_accepts_relative_paths(p: P) -> None:
     using ".". Since the watch path wasn't normalized then that failed.
     This test emulates the scenario.
     """
-    from watchdog.events import FileCreatedEvent, FileModifiedEvent, PatternMatchingEventHandler
+    from watchdog.events import FileAttribEvent, FileCreatedEvent, PatternMatchingEventHandler
 
     class TestEventHandler(PatternMatchingEventHandler):
         def __init__(self, *args, **kwargs):
@@ -649,7 +686,7 @@ def test_recursive_check_accepts_relative_paths(p: P) -> None:
             # as such we won't get a DirModifiedEvent(p()) here.
             self.expected_events = [
                 FileCreatedEvent(p("foo.json")),
-                FileModifiedEvent(p("foo.json")),
+                FileAttribEvent(p("foo.json")),
             ]
             self.observed_events = set()
 
