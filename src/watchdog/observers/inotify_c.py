@@ -360,11 +360,11 @@ class InotifyFD(BaseThread):
         event_buffer = self._read_event_buffer(event_buffer_size)
         records = list(InotifyFD._parse_event_buffer(event_buffer))
 
-        # An overflow carries no watch descriptor, so it cannot be dispatched as an
-        # event and is still dropped by the filter below. Log it instead of losing it.
+        # An overflow record carries the sentinel descriptor -1, so it resolves to no
+        # watch and the filter below drops it. Warn once per read instead of losing it.
         if any(wd == -1 and mask & InotifyConstants.IN_Q_OVERFLOW for wd, mask, _, _ in records):
             logger.warning(
-                "inotify event queue overflowed, the kernel dropped events."
+                "inotify event queue overflowed and the kernel dropped events."
                 " Raise the inotify max_queued_events limit to make this less likely.",
             )
 

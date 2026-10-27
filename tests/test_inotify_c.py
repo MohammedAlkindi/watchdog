@@ -289,3 +289,10 @@ def test_queue_overflow_is_logged(caplog: pytest.LogCaptureFixture) -> None:
         caplog.clear()
         assert read_events(struct_inotify(-1, InotifyConstants.IN_IGNORED)) == []
         assert "overflow" not in caplog.text
+
+        # The overflow bit on a real watch descriptor is not a queue overflow.
+        caplog.clear()
+        assert read_events(struct_inotify(wd=1, mask=InotifyConstants.IN_Q_OVERFLOW)) == [
+            InotifyEvent(WatchDescriptor(1), InotifyConstants.IN_Q_OVERFLOW, 0, b"")
+        ]
+        assert "overflow" not in caplog.text
